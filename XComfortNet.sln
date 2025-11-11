@@ -11,6 +11,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{0C88DD14-F
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XComfortNet.Tests", "test\XComfortNet.Tests\XComfortNet.Tests.csproj", "{641690B3-F9FA-45EE-9719-24D6A6660AEB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XcomfortTestApp", "test\XcomfortTestApp\XcomfortTestApp.csproj", "{3AF3249F-A43F-4821-BB4E-B6824362A71E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -45,6 +47,18 @@ Global
 		{641690B3-F9FA-45EE-9719-24D6A6660AEB}.Release|x64.Build.0 = Release|Any CPU
 		{641690B3-F9FA-45EE-9719-24D6A6660AEB}.Release|x86.ActiveCfg = Release|Any CPU
 		{641690B3-F9FA-45EE-9719-24D6A6660AEB}.Release|x86.Build.0 = Release|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Debug|x64.Build.0 = Debug|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Debug|x86.Build.0 = Debug|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Release|x64.ActiveCfg = Release|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Release|x64.Build.0 = Release|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Release|x86.ActiveCfg = Release|Any CPU
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -52,5 +66,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{A7BFA6E8-D343-4742-8A51-01E66CEBA0B2} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{641690B3-F9FA-45EE-9719-24D6A6660AEB} = {0C88DD14-F956-CE84-757C-A364CCF449FC}
+		{3AF3249F-A43F-4821-BB4E-B6824362A71E} = {0C88DD14-F956-CE84-757C-A364CCF449FC}
 	EndGlobalSection
 EndGlobal

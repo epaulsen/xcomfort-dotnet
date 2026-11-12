@@ -11,11 +11,7 @@ public class PlainTextSocket(ClientWebSocket socket, ILogger? logger = null) : I
 {
     public async Task SendAsync(XComfortMessage message, CancellationToken cancellationToken = default)
     {
-        using var memoryStream = new MemoryStream();
-        await JsonSerializer.SerializeAsync(memoryStream, message, cancellationToken: cancellationToken);
-        memoryStream.Seek(0, SeekOrigin.Begin);
-
-        await socket.SendAsync(new ArraySegment<byte>(memoryStream.ToArray()), WebSocketMessageType.Text, true,
+        await socket.SendAsync(message.ToUtf8Bytes(), WebSocketMessageType.Text, true,
             cancellationToken);
     }
 
@@ -24,7 +20,7 @@ public class PlainTextSocket(ClientWebSocket socket, ILogger? logger = null) : I
         var msg = new XComfortMessage<T>(type, message);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(msg);
         
-        logger?.LogDebug("Sending message: {message}", () => [Encoding.UTF8.GetString(bytes)]);
+        logger?.LogDebug("Sending message type {Type}", type);
         await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
     }
 
@@ -37,10 +33,9 @@ public class PlainTextSocket(ClientWebSocket socket, ILogger? logger = null) : I
     {
         var bytes = await socket.ReceiveStreamAsync(cancellationToken);
         
-        logger?.LogDebug("Received message: {message}", () => [Encoding.UTF8.GetString(bytes)]);
-        
         var msg = JsonSerializer.Deserialize<JsonElement>(bytes);
         int typeInt = msg.GetProperty("type_int").GetInt32();
+        logger?.LogDebug("Received message type {Type}", typeInt);
         return (Messages)typeInt switch
         {
             Messages.CONNECTION_START => JsonSerializer.Deserialize<XComfortMessage<ConnectionStart>>(bytes)!,
@@ -49,5 +44,11 @@ public class PlainTextSocket(ClientWebSocket socket, ILogger? logger = null) : I
 
             _ => JsonSerializer.Deserialize<XComfortMessage>(bytes)!
         };
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        socket.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

@@ -3,15 +3,50 @@ Dotnet library for working with XComfort Bridge
 
 ## Web application
 
-Requires the .NET 10 SDK. Run the minimal API without containers:
+Requires the .NET 10 SDK and an MQTT broker. Put local Bridge credentials in
+`src/XComfortNet.Web/appsettings.Development.json` (excluded from Git):
+
+```json
+{
+  "XComfort": {
+    "Host": "<bridge-ip>",
+    "AuthKey": "<auth-key>"
+  }
+}
+```
+
+Run the API against an existing broker:
 
 ```sh
 dotnet run --project src/XComfortNet.Web
 ```
 
-The API references the XComfortNet library. `GET /` identifies the application;
-`GET /health` reports application health. Bridge connections, MQTT publishing,
-and Home Assistant discovery are not implemented yet.
+The broker defaults to `localhost:1883`; override `Mqtt:Host` and `Mqtt:Port`
+in local configuration. `GET /` identifies the application; `GET /health`
+reports application health. `GET /api/lights` shows Bridge/MQTT connection status
+and all verified lights without exposing credentials. `GET /api/light` remains
+available for compatibility.
+
+The application reads the full inventory and exposes all verified lights:
+actuator type 100/101 with explicit light usage (0). Channels belonging to the
+same physical component share a Home Assistant device, with separate light
+entities and state/command topics. Switch and
+dimmer commands are supported; heating, scenes, rooms, and other devices are
+never controlled. Entity identities depend on Bridge/device IDs, not inventory
+order. The previous single-light discovery document is retired automatically;
+its entity unique ID is preserved.
+
+Discovery, state, and availability are retained under `homeassistant/device/`
+and `xcomfort2mqtt/`. Commands use JSON light payloads (`state` and optional
+`brightness`, scale 0-99). Retained, malformed, unsupported, or misaddressed
+commands are ignored. Home Assistant uses optimistic light control for immediate
+on/off and brightness feedback in the UI. Published MQTT state and the API still
+contain only Bridge-reported state; reported changes update Home Assistant as
+before. If a command fails, the assumed UI state may remain incorrect until a
+new state update arrives.
+MQTT and Bridge connections retry independently. Removed or reclassified lights
+are removed from published discovery when the running service receives updated
+inventory; commands are always checked against the current verified inventory.
 
 ## Local integration environment
 
@@ -28,12 +63,13 @@ conflicts. The HTTP profile is intended for local development only; the HTTPS
 profile requires a trusted .NET development certificate.
 
 The web application receives `Mqtt:Host` and `Mqtt:Port` through environment
-variables, ready for a future MQTT client. Inside the container network, the
+variables. Inside the container network, the
 broker is reachable at `mqtt:1883`.
 
 Open Home Assistant through its dashboard endpoint and complete onboarding.
 Then add the MQTT integration using broker `mqtt`, port `1883`, and no
-credentials. This initial setup is manual; no entities are exposed yet.
+credentials. This initial setup is manual; all verified lights are then
+discovered automatically.
 Home Assistant configuration persists in the AppHost's `homeassistant` folder,
 bind-mounted to `/config`. Generated configuration, credentials, and databases
 are excluded from Git. Mosquitto messages persist in a named Docker volume.

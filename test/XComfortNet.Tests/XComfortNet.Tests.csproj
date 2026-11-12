@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\XComfortNet\XComfortNet.csproj" />
+    <ProjectReference Include="..\..\src\XComfortNet.Web\XComfortNet.Web.csproj" />
   </ItemGroup>
 
 </Project>

@@ -263,6 +263,11 @@ Sanitize captured protocol traffic before using it as test data.
 
 ## Implementation milestones
 
+Implementation priority changed after planning: deliver the first verified
+light, including on/off and dimming, before the sensor milestone below. This
+initial vertical slice combines the relevant parts of milestones 1-4; it does
+not require completing the broader domain model first.
+
 ### 1. Protocol foundation
 
 - Stabilize connection, authentication, framing, counters, ACK/NACK, and cleanup.

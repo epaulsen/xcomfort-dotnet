@@ -7,7 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
     <ProjectReference Include="..\XComfortNet\XComfortNet.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="XComfortNet.Tests" />
   </ItemGroup>
 
 </Project>

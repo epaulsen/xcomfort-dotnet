@@ -16,12 +16,10 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
 {
     private readonly AesCrypto _crypto = new(key, iv);
     
-    private int _sequenceNumber = 0;
-
     public async Task SendAsync(XComfortMessage message, CancellationToken cancellationToken = default)
     {
-        var plain = JsonSerializer.SerializeToUtf8Bytes(message); // JSON as bytes
-        logger?.LogDebug("Sending message: {message}", () => [Encoding.UTF8.GetString(plain)]);
+        var plain = message.ToUtf8Bytes();
+        logger?.LogDebug("Sending message type {Type}", message.TypeId);
         await SendInternalAsync(plain, cancellationToken);
     }
 
@@ -29,7 +27,7 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
     {
         var msg = new XComfortMessage<T>(type, message);
         var plain = JsonSerializer.SerializeToUtf8Bytes(msg); // JSON as bytes
-        logger?.LogDebug("Sending message: {message}", () => [Encoding.UTF8.GetString(plain)]);
+        logger?.LogDebug("Sending message type {Type}", type);
         await SendInternalAsync(plain, cancellationToken);       
     }
 
@@ -46,7 +44,7 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
     {
         var ack = new Ack() {Ref = messageId};
         var plain = JsonSerializer.SerializeToUtf8Bytes(ack); // JSON as bytes
-        logger?.LogDebug("Sending message: {message}", () => [Encoding.UTF8.GetString(plain)]);
+        logger?.LogTrace("Acknowledging message {MessageId}", messageId);
         await SendInternalAsync(plain, cancellationToken);       
     }
 
@@ -86,13 +84,20 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
 
             var decrypted = _crypto.Decrypt(decodedBuffer.AsSpan(0, written));
             
-            logger?.LogDebug("Received message: {message}", () => [Encoding.UTF8.GetString(decrypted)]);
-            
-            return JsonSerializer.Deserialize<XComfortMessage>(decrypted)!;           
+            var message = JsonSerializer.Deserialize<XComfortMessage>(decrypted)
+                ?? throw new JsonException("Empty bridge message.");
+            logger?.LogDebug("Received message type {Type}", message.TypeId);
+            return message;
         }
         finally
         {
             ArrayPool<byte>.Shared.Return(decodedBuffer);
         }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        socket.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

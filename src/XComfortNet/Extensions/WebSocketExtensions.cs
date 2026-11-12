@@ -56,23 +56,26 @@ internal static class WebSocketExtensions
                 var segment = new ArraySegment<byte>(buffer);
                 var result = await socket.ReceiveAsync(segment, cancellationToken);
 
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    throw new WebSocketException("Bridge closed the connection.");
+                }
+
                 ms.Write(buffer, 0, result.Count);
 
                 if (result.EndOfMessage)
                 {
                     var array = ms.ToArray();
+                    if (array.Length == 0)
+                    {
+                        throw new WebSocketException("Bridge returned an empty message.");
+                    }
                     if (array[^1] == 0x04 || array[^1] == 0x00)  // Remove trailing null character if present
                     {
                         array = array.SkipLast(1).ToArray();
                     }
-                    logger.LogDebug("Received raw: {raw}", Encoding.UTF8.GetString(array));
+                    logger.LogTrace("Received {ByteCount} bytes", array.Length);
                     return array;
-                }
-
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by client", cancellationToken);
-                    return [];
                 }
             }
         }

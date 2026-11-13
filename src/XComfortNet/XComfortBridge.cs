@@ -12,22 +12,28 @@ public sealed class XComfortBridge : IAsyncDisposable
     private readonly string _authKey;
     private readonly ILoggerFactory _loggerFactory;
     private readonly LightInventory _inventory;
+    private readonly TelemetryInventory _telemetry = new();
+    private readonly SemaphoreSlim _climateCommands = new(1, 1);
     private readonly Subject<XComfortMessage> _messages = new();
     private readonly Subject<XComfortLight?> _lightChanges = new();
     private readonly Subject<IReadOnlyList<XComfortLight>> _allLightChanges = new();
+    private readonly Subject<XComfortTelemetry> _telemetryChanges = new();
     private readonly TaskCompletionSource _initialData = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private MessagePump? _messagePump;
     private IDisposable? _messageSubscription;
     private XComfortLight? _lastLight;
     private IReadOnlyList<XComfortLight> _lastLights = [];
+    private XComfortTelemetry _lastTelemetry = XComfortTelemetry.Empty;
     private bool _publishedSnapshot;
 
     public IObservable<XComfortMessage> MessageReceived => _messages;
     public IObservable<XComfortLight?> LightChanged => _lightChanges;
     public IObservable<IReadOnlyList<XComfortLight>> LightsChanged => _allLightChanges;
+    public IObservable<XComfortTelemetry> TelemetryChanged => _telemetryChanges;
     public string? BridgeId => _messagePump?.BridgeId;
     public XComfortLight? FirstLight => _inventory.FirstLight;
     public IReadOnlyList<XComfortLight> Lights => _inventory.Lights;
+    public XComfortTelemetry Telemetry => _telemetry.Snapshot;
     public Task Completion => _messagePump?.Completion ?? Task.CompletedTask;
 
     public XComfortBridge(string ipAddress, string authKey, ILoggerFactory? loggerFactory = null,
@@ -48,9 +54,11 @@ public sealed class XComfortBridge : IAsyncDisposable
 
         _messagePump = await XComfortBridgeFactory.ConnectAsync(
             _ipAddress, _authKey, _loggerFactory, cancellationToken ?? CancellationToken.None);
+        _telemetry.SetBridgeInfo(_messagePump.BridgeId, _messagePump.FirmwareVersion, _ipAddress);
         _messageSubscription = _messagePump.MessageReceived.Subscribe(message =>
         {
             _inventory.Apply(message);
+            _telemetry.Apply(message);
             _messages.OnNext(message);
             if (!_inventory.IsInitialized)
             {
@@ -58,6 +66,13 @@ public sealed class XComfortBridge : IAsyncDisposable
             }
 
             var lights = _inventory.Lights;
+            var telemetry = _telemetry.Snapshot;
+            if (!_publishedSnapshot || !telemetry.Climates.SequenceEqual(_lastTelemetry.Climates) ||
+                !telemetry.Sensors.SequenceEqual(_lastTelemetry.Sensors))
+            {
+                _lastTelemetry = telemetry;
+                _telemetryChanges.OnNext(telemetry);
+            }
             if (!_publishedSnapshot || !lights.SequenceEqual(_lastLights))
             {
                 _lastLights = lights;
@@ -123,6 +138,22 @@ public sealed class XComfortBridge : IAsyncDisposable
         }
     }
 
+    public async Task SetClimateAsync(int roomId, ClimateCommand command, CancellationToken cancellationToken = default)
+    {
+        await _climateCommands.WaitAsync(cancellationToken);
+        try
+        {
+            var room = _telemetry.GetClimate(roomId)
+                ?? throw new InvalidOperationException("Only a verified climate-capable room can be controlled.");
+            foreach (var payload in command.Build(room))
+                await GetPump().SendMessageAsync(Messages.SET_HEATING_STATE, payload, cancellationToken: cancellationToken);
+        }
+        finally
+        {
+            _climateCommands.Release();
+        }
+    }
+
     private MessagePump GetPump() =>
         _messagePump ?? throw new InvalidOperationException("Bridge is not connected.");
 
@@ -136,5 +167,7 @@ public sealed class XComfortBridge : IAsyncDisposable
         _messages.Dispose();
         _lightChanges.Dispose();
         _allLightChanges.Dispose();
+        _telemetryChanges.Dispose();
+        _climateCommands.Dispose();
     }
 }

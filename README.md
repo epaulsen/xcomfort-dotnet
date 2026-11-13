@@ -48,6 +48,38 @@ MQTT and Bridge connections retry independently. Removed or reclassified lights
 are removed from published discovery when the running service receives updated
 inventory; commands are always checked against the current verified inventory.
 
+### Climate, measurements and diagnostics
+
+`GET /api/devices` includes lights, room climates, measurements, and diagnostics.
+Only rooms explicitly reported with `temperatureOnly: false` become climate
+entities, including when heating configuration arrives after the initial
+inventory. Linked thermostat/sensor readings override room measurements.
+
+Climate entities support off/heat, target temperature, and Frost Protection,
+eco, and comfort presets. Preset-specific temperature ranges are enforced.
+Commands address verified room IDs only; unknown rooms, unsupported commands,
+invalid values, and retained commands are rejected. Climate state is never
+optimistic. Command sequencing follows the Python integration, including the
+Bridge's `confirmed` flag and manual-mode transition when changing presets.
+
+Measurements include reported temperature, humidity, power, heating demand,
+and valve position. Diagnostics include device temperature, signal quality,
+RSSI where reported, battery buckets (0/25/50/75/100%), and Bridge identity,
+firmware, address, and remote-access status. Remote-access diagnostics are
+read-only. Physical channels and diagnostics share component devices; room
+climate and room measurements share room devices. Unknown readings remain
+unknown rather than becoming zero.
+
+Each power sensor also gets **Estimated energy** in kWh. This integrates the
+last reported power while the Bridge is connected; it is not a hardware energy
+meter. Totals persist in the Git-ignored `src/XComfortNet.Web/data/energy.json`,
+saved every 30 seconds and on graceful shutdown. Offline time is not counted;
+an abrupt stop can lose the last unsaved interval. Preserve this data directory
+when deploying in a container.
+
+Live heating validation in this lab is read-only unless separately authorized.
+Protocol command payloads and sequencing are tested without controlling heaters.
+
 ## Local integration environment
 
 Requires the .NET 10 SDK and a running Docker-compatible container runtime:

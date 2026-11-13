@@ -18,5 +18,6 @@ app.MapGet("/", () => "XComfortNet");
 app.MapHealthChecks("/health");
 app.MapGet("/api/light", (LightBridgeService bridge) => bridge.Status);
 app.MapGet("/api/lights", (LightBridgeService bridge) => bridge.Status);
+app.MapGet("/api/devices", (LightBridgeService bridge) => bridge.Status);
 
 app.Run();

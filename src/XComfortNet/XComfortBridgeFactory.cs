@@ -131,7 +131,8 @@ internal static class XComfortBridgeFactory
             msg = await comm.ReceiveAsync(cancellationToken);
             ValidateToken(msg);
 
-            return new MessagePump(comm, deviceId, loggerFactory?.CreateLogger<MessagePump>());
+            return new MessagePump(comm, deviceId, loggerFactory?.CreateLogger<MessagePump>(),
+                connectionStart.Payload.DeviceVersion);
         }
         catch
         {

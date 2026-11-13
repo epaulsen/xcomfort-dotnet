@@ -26,22 +26,25 @@ internal sealed class MqttOptions
 
 internal sealed record LightBridgeStatus(
     bool MqttConnected, bool BridgeConnected, bool InventoryReady, string? BridgeId,
-    XComfortLight? Light, IReadOnlyList<XComfortLight> Lights);
+    XComfortLight? Light, IReadOnlyList<XComfortLight> Lights,
+    IReadOnlyList<XComfortClimate> Climates, IReadOnlyList<XComfortSensor> Sensors);
 
 internal sealed class LightBridgeService(
     IOptions<XComfortOptions> bridgeOptions,
     IOptions<MqttOptions> mqttOptions,
     ILoggerFactory loggerFactory,
+    IHostEnvironment environment,
     ILogger<LightBridgeService> logger) : BackgroundService
 {
     private readonly IMqttClient _mqtt = new MqttClientFactory().CreateMqttClient();
     private readonly LightMqttProtocol _protocol = new(mqttOptions.Value.TopicPrefix);
+    private readonly EnergyTracker _energy = new(Path.Combine(environment.ContentRootPath, "data", "energy.json"), TimeProvider.System);
     private readonly Channel<bool> _changes = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
     {
         SingleReader = true,
         FullMode = BoundedChannelFullMode.DropOldest
     });
-    private volatile BridgeState _state = new(null, [], false);
+    private volatile BridgeState _state = new(null, [], XComfortTelemetry.Empty, false);
     private volatile XComfortBridge? _bridge;
     private TaskCompletionSource _mqttDisconnected = NewSignal();
     private CancellationToken _stoppingToken;
@@ -53,9 +56,12 @@ internal sealed class LightBridgeService(
         {
             var state = _state;
             var bridge = _bridge;
+            var telemetry = state.BridgeId is string bridgeId
+                ? _energy.AppendSensors(bridgeId, state.Telemetry) : state.Telemetry;
             return new LightBridgeStatus(_mqtt.IsConnected,
                 bridge?.BridgeId is not null && !bridge.Completion.IsCompleted,
-                state.Ready, state.BridgeId, state.Lights.FirstOrDefault(), state.Lights);
+                state.Ready, state.BridgeId, state.Lights.FirstOrDefault(), state.Lights,
+                telemetry.Climates, telemetry.Sensors);
         }
     }
 
@@ -71,13 +77,21 @@ internal sealed class LightBridgeService(
         try
         {
             await Task.WhenAll(RunBridgeAsync(stoppingToken), RunMqttAsync(stoppingToken),
-                PublishChangesAsync(stoppingToken));
+                PublishChangesAsync(stoppingToken), TrackEnergyAsync(stoppingToken));
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
         }
         finally
         {
+            try
+            {
+                await _energy.SaveAsync();
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning("Energy totals could not be saved: {ErrorType}", error.GetType().Name);
+            }
             if (_mqtt.IsConnected)
             {
                 using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(3));
@@ -105,7 +119,14 @@ internal sealed class LightBridgeService(
                 _bridge = bridge;
                 using var subscription = bridge.LightsChanged.Subscribe(lights =>
                 {
-                    _state = new BridgeState(bridge.BridgeId, lights, true);
+                    _state = new BridgeState(bridge.BridgeId, lights, bridge.Telemetry, true);
+                    ObserveEnergy();
+                    SignalChange();
+                });
+                using var telemetrySubscription = bridge.TelemetryChanged.Subscribe(telemetry =>
+                {
+                    _state = new BridgeState(bridge.BridgeId, bridge.Lights, telemetry, true);
+                    ObserveEnergy();
                     SignalChange();
                 });
                 try
@@ -115,7 +136,8 @@ internal sealed class LightBridgeService(
                     await bridge.ConnectAsync(initialization.Token);
                     await bridge.ReadAllDataAsync(initialization.Token);
                     await bridge.WaitForInitializationAsync(initialization.Token);
-                    logger.LogInformation("Inventory completed with {LightCount} verified lights.", bridge.Lights.Count);
+                    logger.LogInformation("Inventory completed with {LightCount} lights, {ClimateCount} climates and {SensorCount} sensors.",
+                        bridge.Lights.Count, bridge.Telemetry.Climates.Count, bridge.Telemetry.Sensors.Count);
                     await bridge.Completion.WaitAsync(stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -131,6 +153,7 @@ internal sealed class LightBridgeService(
                 {
                     _bridge = null;
                     _state = _state with { Ready = false };
+                    ObserveEnergy();
                     SignalChange();
                 }
             }
@@ -158,6 +181,9 @@ internal sealed class LightBridgeService(
                 await _mqtt.ConnectAsync(options, stoppingToken);
                 var subscriptions = new MqttClientSubscribeOptionsBuilder()
                     .WithTopicFilter(filter => filter.WithTopic(_protocol.CommandFilter)
+                        .WithAtLeastOnceQoS().WithRetainAsPublished()
+                        .WithRetainHandling(MqttRetainHandling.DoNotSendOnSubscribe))
+                    .WithTopicFilter(filter => filter.WithTopic(_protocol.ClimateCommandFilter)
                         .WithAtLeastOnceQoS().WithRetainAsPublished()
                         .WithRetainHandling(MqttRetainHandling.DoNotSendOnSubscribe))
                     .WithTopicFilter("homeassistant/status")
@@ -188,6 +214,7 @@ internal sealed class LightBridgeService(
         var discoveryCache = new Dictionary<string, string>();
         var stateCache = new Dictionary<string, string>();
         var publishedRevision = -1;
+        var telemetryProtocol = new TelemetryMqttProtocol(_protocol);
         await foreach (var _ in _changes.Reader.ReadAllAsync(stoppingToken))
         {
             if (!_mqtt.IsConnected)
@@ -210,15 +237,16 @@ internal sealed class LightBridgeService(
                         // Retire the single-light document; entity unique IDs remain unchanged.
                         await PublishAsync(_protocol.LegacyDiscoveryTopic(bridgeId), "", stoppingToken);
                     }
-                    var discoveries = state.Lights.GroupBy(light => light.ComponentId).ToDictionary(
-                        group => _protocol.DiscoveryTopic(bridgeId, group.Key),
-                        group => _protocol.Discovery(bridgeId, group.OrderBy(light => light.DeviceId).ToArray()));
+                    var telemetry = _energy.AppendSensors(bridgeId, state.Telemetry);
+                    var discoveries = telemetryProtocol.Discoveries(bridgeId, state.Lights, telemetry);
                     await PublishRetainedSetAsync(discoveryCache, discoveries, force, stoppingToken);
                     var states = state.Lights
                         .Select(light => (Topic: _protocol.StateTopic(bridgeId, light.DeviceId),
                             Payload: LightMqttProtocol.State(light)))
                         .Where(item => item.Payload is not null)
                         .ToDictionary(item => item.Topic, item => item.Payload!);
+                    foreach (var (topic, payload) in telemetryProtocol.States(bridgeId, telemetry))
+                        states[topic] = payload;
                     await PublishRetainedSetAsync(stateCache, states, force, stoppingToken);
                     publishedRevision = revision;
                 }
@@ -239,6 +267,30 @@ internal sealed class LightBridgeService(
         }
     }
 
+    private void ObserveEnergy()
+    {
+        var state = _state;
+        if (state.BridgeId is string bridgeId) _energy.Observe(bridgeId, state.Telemetry, state.Ready);
+    }
+
+    private async Task TrackEnergyAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        while (await timer.WaitForNextTickAsync(stoppingToken))
+        {
+            ObserveEnergy();
+            SignalChange();
+            try
+            {
+                await _energy.SaveAsync(stoppingToken);
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning("Energy totals could not be saved: {ErrorType}", error.GetType().Name);
+            }
+        }
+    }
+
     private async Task HandleMqttMessageAsync(MqttApplicationMessageReceivedEventArgs args)
     {
         var message = args.ApplicationMessage;
@@ -255,11 +307,29 @@ internal sealed class LightBridgeService(
 
         var state = _state;
         var bridge = _bridge;
+        if (state.Ready && bridge is not null && state.BridgeId is string climateBridgeId &&
+            new TelemetryMqttProtocol(_protocol).TryParseCommand(message.Topic, climateBridgeId,
+                state.Telemetry.Climates, payload, message.Retain, out var roomId, out var climateCommand))
+        {
+            try
+            {
+                await bridge.SetClimateAsync(roomId, climateCommand!, _stoppingToken);
+                logger.LogInformation("Sent climate command to room {RoomId}.", roomId);
+            }
+            catch (OperationCanceledException) when (_stoppingToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception error)
+            {
+                logger.LogWarning("Climate command failed: {ErrorType}", error.GetType().Name);
+            }
+            return;
+        }
         if (!state.Ready || bridge is null || state.BridgeId is not string bridgeId ||
             state.Lights.FirstOrDefault(light =>
                 message.Topic == _protocol.CommandTopic(bridgeId, light.DeviceId)) is not { } light)
         {
-            logger.LogWarning("Ignored MQTT command for an unavailable or unverified light.");
+            logger.LogWarning("Ignored MQTT command for an unavailable entity or an invalid/retained command.");
             return;
         }
         if (!_protocol.TryParseCommand(message.Topic, bridgeId, light, payload, message.Retain, out var command))
@@ -307,5 +377,6 @@ internal sealed class LightBridgeService(
 
     private void SignalChange() => _changes.Writer.TryWrite(true);
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private sealed record BridgeState(string? BridgeId, IReadOnlyList<XComfortLight> Lights, bool Ready);
+    private sealed record BridgeState(string? BridgeId, IReadOnlyList<XComfortLight> Lights,
+        XComfortTelemetry Telemetry, bool Ready);
 }

@@ -19,13 +19,16 @@ internal sealed class MessagePump : IAsyncDisposable
     private int _sequenceNumber = 100;
 
     public string BridgeId { get; }
+    public string? FirmwareVersion { get; }
     public Task Completion => _pumpTask;
 
-    public MessagePump(IXComfortWebSocket socket, string bridgeId, ILogger<MessagePump>? logger = null)
+    public MessagePump(IXComfortWebSocket socket, string bridgeId, ILogger<MessagePump>? logger = null,
+        string? firmwareVersion = null)
     {
         _socket = socket;
         _logger = logger ?? NullLogger<MessagePump>.Instance;
         BridgeId = bridgeId;
+        FirmwareVersion = firmwareVersion;
     }
 
     public void Start()

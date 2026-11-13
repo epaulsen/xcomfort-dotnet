@@ -20,6 +20,15 @@ internal sealed class LightMqttProtocol(string prefix)
     public string Discovery(string bridgeId, IReadOnlyList<XComfortLight> lights)
     {
         var first = lights.First();
+        return DeviceDiscovery(bridgeId, $"comp_{first.ComponentId}",
+            lights.Count == 1 ? first.Name : $"xComfort {first.ComponentId}",
+            lights.Count == 1 ? first.Dimmable ? "xComfort Dimmer" : "xComfort Switch" : "xComfort Actuator",
+            LightComponents(bridgeId, lights));
+    }
+
+    internal Dictionary<string, object> LightComponents(string bridgeId, IReadOnlyList<XComfortLight> lights)
+    {
+        var first = lights.First();
         var components = new Dictionary<string, object>();
         foreach (var light in lights)
         {
@@ -46,14 +55,18 @@ internal sealed class LightMqttProtocol(string prefix)
             components[$"light_{light.DeviceId}"] = entity;
         }
 
-        return JsonSerializer.Serialize(new
+        return components;
+    }
+
+    internal string DeviceDiscovery(string bridgeId, string ownerId, string name, string model,
+        Dictionary<string, object> components) => JsonSerializer.Serialize(new
         {
             device = new
             {
-                identifiers = new[] { $"{prefix}_{Id(bridgeId)}_comp_{first.ComponentId}" },
-                name = lights.Count == 1 ? first.Name : $"xComfort {first.ComponentId}",
+                identifiers = new[] { UniqueId(bridgeId, ownerId) },
+                name,
                 manufacturer = "Eaton",
-                model = lights.Count == 1 ? first.Dimmable ? "xComfort Dimmer" : "xComfort Switch" : "xComfort Actuator"
+                model
             },
             origin = new { name = "Xcomfort2Mqtt" },
             availability = new[]
@@ -64,7 +77,14 @@ internal sealed class LightMqttProtocol(string prefix)
             availability_mode = "all",
             components
         });
-    }
+
+    public string UniqueId(string bridgeId, string key) => $"{prefix}_{Id(bridgeId)}_{key}";
+    public string OwnerDiscoveryTopic(string bridgeId, string ownerId) =>
+        $"homeassistant/device/{prefix}_{Id(bridgeId)}_{ownerId}/config";
+    public string TelemetryStateTopic(string bridgeId, string ownerId) => $"{prefix}/{Id(bridgeId)}/telemetry/{ownerId}/state";
+    public string ClimateCommandFilter => $"{prefix}/+/room/+/+/set";
+    public string ClimateCommandTopic(string bridgeId, int roomId, string command) => $"{prefix}/{Id(bridgeId)}/room/{roomId}/{command}/set";
+    public string ClimateStateTopic(string bridgeId, int roomId) => $"{prefix}/{Id(bridgeId)}/room/{roomId}/state";
 
     public static string? State(XComfortLight light)
     {

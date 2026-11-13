@@ -178,10 +178,10 @@ public sealed class TelemetryInventory
                 Add(type == 441 ? "valve_position" : "heating_demand",
                     type == 441 ? "Valve position" : "Heating demand",
                     device.Number("dimmvalue") ?? device.InfoNumber("1225"), null, "%");
-            if (device.Has("power") || device.HasInfo("1110") || device.HasInfo("1226"))
+            if (type is not (100 or 101) &&
+                (device.Has("power") || device.HasInfo("1110") || device.HasInfo("1226")))
             {
                 var power = device.Number("power") ?? device.InfoNumber("1110") ?? device.InfoNumber("1226");
-                if (type is 100 or 101 && device.Boolean("switch") == false) power = 0;
                 Add("power", "Power", power, "power", "W");
             }
         }

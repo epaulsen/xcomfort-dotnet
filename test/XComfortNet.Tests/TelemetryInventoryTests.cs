@@ -77,19 +77,36 @@ public class TelemetryInventoryTests
     }
 
     [Fact]
-    public void PowerInformationUpdatesReplaceOldMeasurementsWithoutStickingAtInferredOffPower()
+    public void PowerInformationUpdatesReplaceOldMeasurements()
     {
         var inventory = new TelemetryInventory();
         inventory.Apply(Message(300, """
-            {"devices":[{"deviceId":1,"devType":100,"switch":false,"power":250}],"lastItem":true}
+            {"devices":[{"deviceId":1,"devType":440,"power":250}],"lastItem":true}
             """));
-        Assert.Equal(0d, inventory.Snapshot.Sensors.Single().Value);
-        inventory.Apply(Message(291, """{"deviceId":1,"switch":true,"info":[{"text":"1110","value":"500"}]}"""));
+        Assert.Equal(250d, inventory.Snapshot.Sensors.Single().Value);
+        inventory.Apply(Message(291, """{"deviceId":1,"info":[{"text":"1110","value":"500"}]}"""));
         Assert.Equal(500d, inventory.Snapshot.Sensors.Single().Value);
         inventory.Apply(Message(292, """{"deviceId":1,"info":[{"text":"1226","value":"750"}]}"""));
         Assert.Equal(750d, inventory.Snapshot.Sensors.Single().Value);
         inventory.Apply(Message(291, """{"deviceId":1,"power":100,"info":[{"text":"1110","value":"90"}]}"""));
         Assert.Equal(100d, inventory.Snapshot.Sensors.Single().Value);
+    }
+
+    [Theory]
+    [InlineData(100)]
+    [InlineData(101)]
+    public void LightActuatorsNeverExposePowerDespiteGenericPowerFields(int deviceType)
+    {
+        var inventory = new TelemetryInventory();
+        inventory.Apply(Message(300, $$"""
+            {"devices":[{"deviceId":1,"devType":{{deviceType}},"usage":0,"switch":false,"power":0,
+             "info":[{"text":"1109","value":"28.5"},{"text":"1110","value":"250"},{"text":"1226","value":"300"}]}],
+             "lastItem":true}
+            """));
+        Assert.DoesNotContain(inventory.Snapshot.Sensors, sensor => sensor.DeviceClass == "power");
+        Assert.Equal(28.5d, Assert.Single(inventory.Snapshot.Sensors).Value);
+        inventory.Apply(Message(291, """{"deviceId":1,"switch":true,"power":500}"""));
+        Assert.DoesNotContain(inventory.Snapshot.Sensors, sensor => sensor.DeviceClass == "power");
     }
 
     [Fact]

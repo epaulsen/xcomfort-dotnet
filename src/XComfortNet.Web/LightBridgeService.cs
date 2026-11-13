@@ -239,6 +239,10 @@ internal sealed class LightBridgeService(
                     }
                     var telemetry = _energy.AppendSensors(bridgeId, state.Telemetry);
                     var discoveries = telemetryProtocol.Discoveries(bridgeId, state.Lights, telemetry);
+                    if (force)
+                        foreach (var (topic, payload) in telemetryProtocol.LightPowerRemovalDiscoveries(
+                            bridgeId, state.Lights, discoveries))
+                            await PublishAsync(topic, payload, stoppingToken);
                     await PublishRetainedSetAsync(discoveryCache, discoveries, force, stoppingToken);
                     var states = state.Lights
                         .Select(light => (Topic: _protocol.StateTopic(bridgeId, light.DeviceId),

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using XComfortDotNet;
+using XComfortDotNet.Model;
 using XComfortNet.Web;
 
 namespace XComfortNet.Tests;
@@ -52,6 +53,41 @@ public class ClimateMqttTests
         Assert.False(components.GetProperty("device_1_temperature").TryGetProperty("entity_category", out _));
         using var state = JsonDocument.Parse(Assert.Single(protocol.States("bridge-1", telemetry)).Value);
         Assert.Equal(JsonValueKind.Null, state.RootElement.GetProperty("device_1_temperature").ValueKind);
+    }
+
+    [Theory]
+    [InlineData(100)]
+    [InlineData(101)]
+    public void LightDiscoveryRemovesOldPowerAndEnergyWithoutRemovingLightsOrDiagnostics(int deviceType)
+    {
+        var inventory = new TelemetryInventory();
+        inventory.Apply(JsonSerializer.Deserialize<XComfortMessage>($$$"""
+            {"type_int":300,"payload":{"devices":[{"deviceId":1,"compId":4,"devType":{{{deviceType}}},
+             "usage":0,"power":0,"info":[{"text":"1109","value":"28.5"}]}],"lastItem":true}}
+            """)!);
+        var tracker = new EnergyTracker(Path.Combine(AppContext.BaseDirectory, $"absent-{Guid.NewGuid():N}.json"), TimeProvider.System);
+        tracker.Observe("bridge-1", inventory.Snapshot, true);
+        var telemetry = tracker.AppendSensors("bridge-1", inventory.Snapshot);
+        Assert.DoesNotContain(telemetry.Sensors, sensor => sensor.DeviceClass is "power" or "energy");
+        var light = new XComfortLight(1, 4, "Light", deviceType == 101, false, 0, 0);
+        var protocol = new TelemetryMqttProtocol(_topics);
+        var discoveries = protocol.Discoveries("bridge-1", [light], telemetry);
+        using var normal = JsonDocument.Parse(Assert.Single(discoveries).Value);
+        var components = normal.RootElement.GetProperty("components");
+        Assert.True(components.TryGetProperty("light_1", out _));
+        Assert.True(components.TryGetProperty("device_1_device_temperature", out _));
+        Assert.False(components.TryGetProperty("device_1_power", out _));
+        Assert.False(components.TryGetProperty("device_1_power_energy", out _));
+        using var removal = JsonDocument.Parse(Assert.Single(
+            protocol.LightPowerRemovalDiscoveries("bridge-1", [light], discoveries)).Value);
+        var removals = removal.RootElement.GetProperty("components");
+        foreach (var key in new[] { "device_1_power", "device_1_power_energy" })
+        {
+            Assert.Equal("sensor", removals.GetProperty(key).GetProperty("platform").GetString());
+            Assert.Single(removals.GetProperty(key).EnumerateObject());
+        }
+        Assert.True(removals.TryGetProperty("light_1", out _));
+        Assert.True(removals.TryGetProperty("device_1_device_temperature", out _));
     }
 
     [Theory]

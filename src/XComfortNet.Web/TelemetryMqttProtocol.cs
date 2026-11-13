@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using XComfortDotNet;
 
 namespace XComfortNet.Web;
@@ -75,6 +76,23 @@ internal sealed class TelemetryMqttProtocol(LightMqttProtocol protocol)
         }
         return groups.ToDictionary(pair => protocol.OwnerDiscoveryTopic(bridgeId, pair.Key),
             pair => protocol.DeviceDiscovery(bridgeId, pair.Key, pair.Value.Name, pair.Value.Model, pair.Value.Components));
+    }
+
+    public Dictionary<string, string> LightPowerRemovalDiscoveries(string bridgeId,
+        IReadOnlyList<XComfortLight> lights, IReadOnlyDictionary<string, string> discoveries)
+    {
+        return lights.GroupBy(light => light.ComponentId).ToDictionary(
+            group => protocol.DiscoveryTopic(bridgeId, group.Key),
+            group =>
+            {
+                var document = JsonNode.Parse(discoveries[protocol.DiscoveryTopic(bridgeId, group.Key)])!;
+                var components = document["components"]!;
+                // Home Assistant requires explicit empty components before they are omitted.
+                foreach (var light in group)
+                    foreach (var suffix in new[] { "power", "power_energy" })
+                        components[$"device_{light.DeviceId}_{suffix}"] = new JsonObject { ["platform"] = "sensor" };
+                return document.ToJsonString();
+            });
     }
 
     public Dictionary<string, string> States(string bridgeId, XComfortTelemetry telemetry)

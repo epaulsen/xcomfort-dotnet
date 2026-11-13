@@ -63,8 +63,9 @@ optimistic. Command sequencing follows the Python integration, including the
 Bridge's `confirmed` flag and manual-mode transition when changing presets.
 
 Measurements include reported temperature, humidity, power, heating demand,
-and valve position. Diagnostics include device temperature, signal quality,
-RSSI where reported, battery buckets (0/25/50/75/100%), and Bridge identity,
+and valve position. Light actuators do not report measured power and expose
+neither power nor estimated-energy sensors. Diagnostics include device temperature,
+signal quality, RSSI where reported, battery buckets (0/25/50/75/100%), and Bridge identity,
 firmware, address, and remote-access status. Remote-access diagnostics are
 read-only. Physical channels and diagnostics share component devices; room
 climate and room measurements share room devices. Unknown readings remain

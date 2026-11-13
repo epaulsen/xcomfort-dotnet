@@ -90,9 +90,10 @@ dotnet run --project test/XComfortNet.AppHost --launch-profile http
 ```
 
 The Aspire AppHost starts the web application, Eclipse Mosquitto, and Home
-Assistant. Open the dashboard URL printed at startup to find their endpoints
-and logs. Host ports for the containers are allocated automatically to avoid
-conflicts. The HTTP profile is intended for local development only; the HTTPS
+Assistant. Home Assistant is available at `http://localhost:8123` on every run.
+Open the dashboard URL printed at startup to find service endpoints and logs.
+Mosquitto's host port is allocated automatically to avoid conflicts.
+The HTTP profile is intended for local development only; the HTTPS
 profile requires a trusted .NET development certificate.
 
 The web application receives `Mqtt:Host` and `Mqtt:Port` through environment

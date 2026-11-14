@@ -115,6 +115,8 @@ internal sealed class LightBridgeService(
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            using var refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            Task? refreshTask = null;
             await using (var bridge = new XComfortBridge(bridgeOptions.Value.Host, bridgeOptions.Value.AuthKey,
                 loggerFactory))
             {
@@ -140,6 +142,12 @@ internal sealed class LightBridgeService(
                     await bridge.WaitForInitializationAsync(initialization.Token);
                     logger.LogInformation("Inventory completed with {LightCount} lights, {ClimateCount} climates and {SensorCount} sensors.",
                         bridge.Lights.Count, bridge.Telemetry.Climates.Count, bridge.Telemetry.Sensors.Count);
+                    refreshTask = RefreshBridgeStateAsync(bridge, refreshCancellation.Token);
+                    var completedTask = await Task.WhenAny(bridge.Completion, refreshTask).WaitAsync(stoppingToken);
+                    if (completedTask == refreshTask)
+                    {
+                        await refreshTask;
+                    }
                     await bridge.Completion.WaitAsync(stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -153,6 +161,17 @@ internal sealed class LightBridgeService(
                 }
                 finally
                 {
+                    await refreshCancellation.CancelAsync();
+                    if (refreshTask is { IsCompleted: false })
+                    {
+                        try
+                        {
+                            await refreshTask;
+                        }
+                        catch (OperationCanceledException) when (refreshCancellation.IsCancellationRequested)
+                        {
+                        }
+                    }
                     _bridge = null;
                     _state = _state with { Ready = false };
                     ObserveEnergy();

@@ -5,5 +5,5 @@ namespace XComfortDotNet.Model;
 public class PublicKey
 {
     [JsonPropertyName("public_key")]
-    public string Key { get; set; }
+    public required string Key { get; set; }
 }

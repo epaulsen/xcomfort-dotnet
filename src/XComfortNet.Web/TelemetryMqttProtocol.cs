@@ -95,6 +95,25 @@ internal sealed class TelemetryMqttProtocol(LightMqttProtocol protocol)
             });
     }
 
+    public static string? RemovedComponentsUpdate(string previous, string current)
+    {
+        var oldDocument = JsonNode.Parse(previous);
+        var newDocument = JsonNode.Parse(current);
+        var oldComponents = oldDocument?["components"] as JsonObject;
+        var newComponents = newDocument?["components"] as JsonObject;
+        if (oldComponents is null || newComponents is null) return null;
+
+        var removed = false;
+        foreach (var (key, component) in oldComponents)
+        {
+            if (newComponents.ContainsKey(key) || component?["platform"]?.GetValue<string>() is not { } platform)
+                continue;
+            newComponents[key] = new JsonObject { ["platform"] = platform };
+            removed = true;
+        }
+        return removed ? newDocument!.ToJsonString() : null;
+    }
+
     public Dictionary<string, string> States(string bridgeId, XComfortTelemetry telemetry)
     {
         var states = telemetry.Sensors.GroupBy(sensor => sensor.OwnerId).ToDictionary(

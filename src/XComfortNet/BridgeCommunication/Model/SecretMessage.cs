@@ -5,5 +5,5 @@ namespace XComfortDotNet.Model;
 public class SecretPayload
 {
     [JsonPropertyName("secret")]
-    public string Secret { get; set; }
+    public required string Secret { get; set; }
 }

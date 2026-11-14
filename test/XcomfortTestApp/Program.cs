@@ -20,9 +20,16 @@ using var loggerFactory = LoggerFactory.Create(builder =>
 
 var ip = config["XComfort:Host"];
 var authKey = config["XComfort:AuthKey"];
+if (string.IsNullOrWhiteSpace(ip))
+{
+    throw new InvalidOperationException("Missing required configuration value 'XComfort:Host'.");
+}
+if (string.IsNullOrWhiteSpace(authKey))
+{
+    throw new InvalidOperationException("Missing required configuration value 'XComfort:AuthKey'.");
+}
 
-
-var bridge = new XComfortBridge(ip, authKey, loggerFactory);
+await using var bridge = new XComfortBridge(ip, authKey, loggerFactory);
 await bridge.ConnectAsync();
 
 await bridge.ReadAllDataAsync();

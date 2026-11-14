@@ -15,11 +15,11 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
     : IXComfortWebSocket
 {
     private readonly AesCrypto _crypto = new(key, iv);
-    
+
     public async Task SendAsync(XComfortMessage message, CancellationToken cancellationToken = default)
     {
         var plain = message.ToUtf8Bytes();
-        logger?.LogDebug("Sending message type {Type}", message.TypeId);
+        logger?.LogDebug("Sending message type {Type} for bridge {BridgeId}", message.TypeId, deviceId);
         await SendInternalAsync(plain, cancellationToken);
     }
 
@@ -27,25 +27,25 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
     {
         var msg = new XComfortMessage<T>(type, message);
         var plain = JsonSerializer.SerializeToUtf8Bytes(msg); // JSON as bytes
-        logger?.LogDebug("Sending message type {Type}", type);
-        await SendInternalAsync(plain, cancellationToken);       
+        logger?.LogDebug("Sending message type {Type} for bridge {BridgeId}", type, deviceId);
+        await SendInternalAsync(plain, cancellationToken);
     }
 
     internal class Ack
     {
         [JsonPropertyName("type_int")]
         public int Type => 1;
-        
+
         [JsonPropertyName("ref")]
         public int Ref { get; set; }
     }
-    
+
     public async Task SendAckAsync(int messageId, CancellationToken cancellationToken = default)
     {
-        var ack = new Ack() {Ref = messageId};
+        var ack = new Ack() { Ref = messageId };
         var plain = JsonSerializer.SerializeToUtf8Bytes(ack); // JSON as bytes
-        logger?.LogTrace("Acknowledging message {MessageId}", messageId);
-        await SendInternalAsync(plain, cancellationToken);       
+        logger?.LogTrace("Acknowledging message {MessageId} for bridge {BridgeId}", messageId, deviceId);
+        await SendInternalAsync(plain, cancellationToken);
     }
 
     private async Task SendInternalAsync(byte[] plainBytes, CancellationToken cancellationToken = default)
@@ -83,10 +83,10 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
                 throw new FormatException($"Invalid Base64 payload (status {status}, consumed {consumed}, written {written}).");
 
             var decrypted = _crypto.Decrypt(decodedBuffer.AsSpan(0, written));
-            
+
             var message = JsonSerializer.Deserialize<XComfortMessage>(decrypted)
                 ?? throw new JsonException("Empty bridge message.");
-            logger?.LogDebug("Received message type {Type}", message.TypeId);
+            logger?.LogDebug("Received message type {Type} for bridge {BridgeId}", message.TypeId, deviceId);
             return message;
         }
         finally

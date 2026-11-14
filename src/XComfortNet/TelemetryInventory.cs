@@ -147,6 +147,18 @@ public sealed class TelemetryInventory
             sensor?.InfoNumber("1223") ?? room.Number("humidity"));
     }
 
+    private bool HasRoomTemperature(Entity room)
+    {
+        _devices.TryGetValue(room.Integer("roomSensorId") ?? -1, out var sensor);
+        return room.Has("temp") || sensor?.HasInfo("1222") == true || sensor?.HasInfo("1224") == true;
+    }
+
+    private bool HasRoomHumidity(Entity room)
+    {
+        _devices.TryGetValue(room.Integer("roomSensorId") ?? -1, out var sensor);
+        return room.Has("humidity") || sensor?.HasInfo("1223") == true;
+    }
+
     private IEnumerable<XComfortSensor> Sensors()
     {
         var sensors = new List<XComfortSensor>();
@@ -193,8 +205,8 @@ public sealed class TelemetryInventory
             void Add(string key, string label, double? value, string? deviceClass, string? unit) =>
                 sensors.Add(new XComfortSensor($"{owner}_{key}", owner, name, "xComfort Room",
                     label, deviceClass, unit, "measurement", false, value));
-            if (room.Has("temp") || readings.Temperature is not null) Add("temperature", "Temperature", readings.Temperature, "temperature", "\u00b0C");
-            if (room.Has("humidity") || readings.Humidity is not null) Add("humidity", "Humidity", readings.Humidity, "humidity", "%");
+            if (HasRoomTemperature(room)) Add("temperature", "Temperature", readings.Temperature, "temperature", "\u00b0C");
+            if (HasRoomHumidity(room)) Add("humidity", "Humidity", readings.Humidity, "humidity", "%");
             if (room.Has("power")) Add("power", "Power", room.Number("power"), "power", "W");
             if (room.Has("valve")) Add("heating_demand", "Heating demand", room.Number("valve"), null, "%");
         }
@@ -263,6 +275,8 @@ public sealed class TelemetryInventory
                     entity.Info[code] = item.TryGetProperty("value", out var value) ? value.Clone() : default;
                     if ((code is "1110" or "1226") && !payload.TryGetProperty("power", out _))
                         entity.Fields["power"] = entity.Info[code];
+                    if (code == "1225" && !payload.TryGetProperty("dimmvalue", out _))
+                        entity.Fields["dimmvalue"] = entity.Info[code];
                 }
             }
             else entity.Fields[field.Name] = field.Value.Clone();

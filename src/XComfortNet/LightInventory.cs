@@ -105,6 +105,20 @@ public sealed class LightInventory(int? preferredDeviceId = null)
                         _deviceOrder.Remove(removed.GetInt32());
                     }
                     break;
+                case Messages.COMP_DELETED:
+                    if (payload.TryGetProperty("compId", out var removedComponent))
+                    {
+                        var componentId = removedComponent.GetInt32();
+                        foreach (var deviceId in _devices
+                            .Where(pair => pair.Value.ComponentId == componentId)
+                            .Select(pair => pair.Key)
+                            .ToArray())
+                        {
+                            _devices.Remove(deviceId);
+                            _deviceOrder.Remove(deviceId);
+                        }
+                    }
+                    break;
             }
 
             if (_initialized && _selectedId is null)

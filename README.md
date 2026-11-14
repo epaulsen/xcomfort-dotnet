@@ -77,6 +77,9 @@ meter. Totals persist in the Git-ignored `src/XComfortNet.Web/data/energy.json`,
 saved every 30 seconds and on graceful shutdown. Offline time is not counted;
 an abrupt stop can lose the last unsaved interval. Preserve this data directory
 when deploying in a container.
+The same ignored data directory stores a publication manifest so obsolete
+retained MQTT discovery and state topics can be removed after an application
+restart.
 
 Live heating validation in this lab is read-only unless separately authorized.
 Protocol command payloads and sequencing are tested without controlling heaters.

@@ -3,7 +3,7 @@ using XComfortDotNet.Model;
 
 namespace XComfortNet;
 
-internal interface IXComfortWebSocket
+internal interface IXComfortWebSocket : IAsyncDisposable
 {
     public Task SendAsync(XComfortMessage message, CancellationToken cancellationToken = default);
     

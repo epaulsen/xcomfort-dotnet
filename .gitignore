@@ -438,3 +438,9 @@ FodyWeavers.xsd
 *.iws
 
 appsettings.Development.json
+
+# Local Home Assistant API token
+/test/XComfortNet.AppHost/.homeassistant-token
+
+# Local accumulated energy estimates
+/src/XComfortNet.Web/data/

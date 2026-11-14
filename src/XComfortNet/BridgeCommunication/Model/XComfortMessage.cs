@@ -31,6 +31,8 @@ public class XComfortMessage
     // Holds any extra JSON properties not mapped to explicit members.
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalData { get; set; }
+
+    public byte[] ToUtf8Bytes() => JsonSerializer.SerializeToUtf8Bytes(this, GetType());
 }
 
 public class XComfortMessage<T> : XComfortMessage
@@ -47,5 +49,5 @@ public class XComfortMessage<T> : XComfortMessage
     
     [JsonPropertyName("payload")]
     [JsonPropertyOrder(4)]    
-    public T Payload { get; set; }
+    public T Payload { get; set; } = default!;
 }

@@ -22,8 +22,8 @@ var ip = config["XComfort:Host"];
 var authKey = config["XComfort:AuthKey"];
 
 
-var bridge = await new XComfortBridgeFactory(ip,authKey,loggerFactory).CreateBridgeAsync();
-await Task.Delay(TimeSpan.FromSeconds(1));
+var bridge = new XComfortBridge(ip, authKey, loggerFactory);
+await bridge.ConnectAsync();
 
 await bridge.ReadAllDataAsync();
 

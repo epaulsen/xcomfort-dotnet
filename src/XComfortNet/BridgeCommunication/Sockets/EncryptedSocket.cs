@@ -19,7 +19,7 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
     public async Task SendAsync(XComfortMessage message, CancellationToken cancellationToken = default)
     {
         var plain = message.ToUtf8Bytes();
-        logger?.LogDebug("Sending message type {Type} for bridge {BridgeId}", message.TypeId, deviceId);
+        BridgeMessageLogger.Log(logger, "Sending", message, deviceId);
         await SendInternalAsync(plain, cancellationToken);
     }
 
@@ -27,7 +27,7 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
     {
         var msg = new XComfortMessage<T>(type, message);
         var plain = JsonSerializer.SerializeToUtf8Bytes(msg); // JSON as bytes
-        logger?.LogDebug("Sending message type {Type} for bridge {BridgeId}", type, deviceId);
+        BridgeMessageLogger.Log(logger, "Sending", msg, deviceId);
         await SendInternalAsync(plain, cancellationToken);
     }
 
@@ -44,7 +44,8 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
     {
         var ack = new Ack() { Ref = messageId };
         var plain = JsonSerializer.SerializeToUtf8Bytes(ack); // JSON as bytes
-        logger?.LogTrace("Acknowledging message {MessageId} for bridge {BridgeId}", messageId, deviceId);
+        logger?.LogDebug("Sending xComfort Bridge acknowledgement for message {MessageId} to bridge {BridgeId}",
+            messageId, deviceId);
         await SendInternalAsync(plain, cancellationToken);
     }
 
@@ -72,7 +73,7 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
     public async Task<XComfortMessage> ReceiveAsync(CancellationToken cancellationToken = default)
     {
         // Bytes received are UTF-8 Base64 text representing the encrypted payload.
-        var encoded = await socket.ReceiveStreamAsync(cancellationToken);
+        var encoded = await socket.ReceiveStreamAsync(cancellationToken, logger);
 
         var maxDecoded = Base64.GetMaxDecodedFromUtf8Length(encoded.Length);
         byte[] decodedBuffer = ArrayPool<byte>.Shared.Rent(maxDecoded);
@@ -86,7 +87,7 @@ public class EncryptedSocket(ClientWebSocket socket, string deviceId, byte[] key
 
             var message = JsonSerializer.Deserialize<XComfortMessage>(decrypted)
                 ?? throw new JsonException("Empty bridge message.");
-            logger?.LogDebug("Received message type {Type} for bridge {BridgeId}", message.TypeId, deviceId);
+            BridgeMessageLogger.Log(logger, "Received", message, deviceId);
             return message;
         }
         finally

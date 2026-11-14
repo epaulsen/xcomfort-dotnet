@@ -27,6 +27,27 @@ reports application health. `GET /api/lights` shows Bridge/MQTT connection statu
 and all verified lights without exposing credentials. `GET /api/light` remains
 available for compatibility.
 
+### Debug message logging
+
+Message-level debug logging is disabled by default. Enable only the categories
+needed in `appsettings.Development.json`:
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "XComfortNet.Bridge": "Debug",
+      "XComfortNet.Web.Mqtt": "Debug"
+    }
+  }
+}
+```
+
+Bridge logs include message payloads except for authentication/crypto handshake
+payloads and fields that look like credentials, which are redacted. MQTT debug
+logs include topics and payloads, which may contain device state.
+
 The application reads the full inventory and exposes all verified lights:
 actuator type 100/101 with explicit light usage (0). Channels belonging to the
 same physical component share a Home Assistant device, with separate light

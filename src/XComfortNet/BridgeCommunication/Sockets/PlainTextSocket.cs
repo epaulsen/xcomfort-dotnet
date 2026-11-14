@@ -11,6 +11,7 @@ public class PlainTextSocket(ClientWebSocket socket, ILogger? logger = null) : I
 {
     public async Task SendAsync(XComfortMessage message, CancellationToken cancellationToken = default)
     {
+        BridgeMessageLogger.Log(logger, "Sending", message);
         await socket.SendAsync(message.ToUtf8Bytes(), WebSocketMessageType.Text, true,
             cancellationToken);
     }
@@ -19,8 +20,7 @@ public class PlainTextSocket(ClientWebSocket socket, ILogger? logger = null) : I
     {
         var msg = new XComfortMessage<T>(type, message);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(msg);
-        
-        logger?.LogDebug("Sending message type {Type}", type);
+        BridgeMessageLogger.Log(logger, "Sending", msg);
         await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
     }
 
@@ -31,12 +31,11 @@ public class PlainTextSocket(ClientWebSocket socket, ILogger? logger = null) : I
 
     public async Task<XComfortMessage> ReceiveAsync(CancellationToken cancellationToken = default)
     {
-        var bytes = await socket.ReceiveStreamAsync(cancellationToken);
+        var bytes = await socket.ReceiveStreamAsync(cancellationToken, logger);
         
         var msg = JsonSerializer.Deserialize<JsonElement>(bytes);
         int typeInt = msg.GetProperty("type_int").GetInt32();
-        logger?.LogDebug("Received message type {Type}", typeInt);
-        return (Messages)typeInt switch
+        var message = (Messages)typeInt switch
         {
             Messages.CONNECTION_START => JsonSerializer.Deserialize<XComfortMessage<ConnectionStart>>(bytes)!,
             Messages.CONNECTION_CONFIRM => JsonSerializer.Deserialize<XComfortMessage<ConnectConfirm>>(bytes)!,
@@ -44,6 +43,8 @@ public class PlainTextSocket(ClientWebSocket socket, ILogger? logger = null) : I
 
             _ => JsonSerializer.Deserialize<XComfortMessage>(bytes)!
         };
+        BridgeMessageLogger.Log(logger, "Received", message);
+        return message;
     }
 
     public ValueTask DisposeAsync()

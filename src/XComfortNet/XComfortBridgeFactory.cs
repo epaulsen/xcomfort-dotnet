@@ -21,7 +21,8 @@ internal static class XComfortBridgeFactory
         try
         {
             await socket.ConnectAsync(new Uri($"ws://{ipAddress}/"), cancellationToken);
-            IXComfortWebSocket comm = new PlainTextSocket(socket, loggerFactory?.CreateLogger<PlainTextSocket>());
+            var bridgeLogger = loggerFactory?.CreateLogger("XComfortNet.Bridge");
+            IXComfortWebSocket comm = new PlainTextSocket(socket, bridgeLogger);
 
             var msg = await comm.ReceiveAsync(cancellationToken);
             ArgumentNullException.ThrowIfNull(msg);
@@ -85,7 +86,7 @@ internal static class XComfortBridgeFactory
             await comm.SendAsync(Messages.SC_SECRET, new SecretPayload() { Secret = secret }, cancellationToken: cancellationToken);
 
             // From here on, all communication is encrypted.
-            comm = new EncryptedSocket(socket, deviceId, key, iv, loggerFactory?.CreateLogger<EncryptedSocket>());
+            comm = new EncryptedSocket(socket, deviceId, key, iv, bridgeLogger);
 
             msg = await comm.ReceiveAsync(cancellationToken);
             if (msg.TypeId != Messages.SC_ESTABLISHED)

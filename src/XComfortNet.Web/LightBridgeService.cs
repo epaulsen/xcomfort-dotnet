@@ -37,6 +37,7 @@ internal sealed class LightBridgeService(
     ILogger<LightBridgeService> logger) : BackgroundService
 {
     private readonly IMqttClient _mqtt = new MqttClientFactory().CreateMqttClient();
+    private readonly ILogger _mqttMessageLogger = loggerFactory.CreateLogger("XComfortNet.Web.Mqtt");
     private readonly LightMqttProtocol _protocol = new(mqttOptions.Value.TopicPrefix);
     private readonly EnergyTracker _energy = new(Path.Combine(environment.ContentRootPath, "data", "energy.json"), TimeProvider.System);
     private readonly string _manifestPath = Path.Combine(environment.ContentRootPath, "data", "mqtt-publications.json");
@@ -340,6 +341,8 @@ internal sealed class LightBridgeService(
     {
         var message = args.ApplicationMessage;
         var payload = message.ConvertPayloadToString();
+        _mqttMessageLogger.LogDebug("Received MQTT message on {Topic} (retained: {Retain}): {Payload}",
+            message.Topic, message.Retain, payload);
         if (message.Topic == "homeassistant/status")
         {
             if (payload == "online")
@@ -439,10 +442,13 @@ internal sealed class LightBridgeService(
         }
     }
 
-    private Task PublishAsync(string topic, string payload, CancellationToken cancellationToken) =>
-        _mqtt.PublishAsync(new MqttApplicationMessageBuilder().WithTopic(topic).WithPayload(payload)
-            .WithRetainFlag().WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build(),
-            cancellationToken);
+    private async Task PublishAsync(string topic, string payload, CancellationToken cancellationToken)
+    {
+        var message = new MqttApplicationMessageBuilder().WithTopic(topic).WithPayload(payload)
+            .WithRetainFlag().WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build();
+        await _mqtt.PublishAsync(message, cancellationToken);
+        _mqttMessageLogger.LogDebug("Sent retained MQTT message on {Topic}: {Payload}", topic, payload);
+    }
 
     private void SignalChange() => _changes.Writer.TryWrite(true);
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);

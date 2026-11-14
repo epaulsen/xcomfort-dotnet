@@ -14,8 +14,8 @@ var config = new ConfigurationBuilder()
 
 using var loggerFactory = LoggerFactory.Create(builder =>
 {
+    builder.AddConfiguration(config.GetSection("Logging"));
     builder.AddConsole();
-    builder.SetMinimumLevel(LogLevel.Trace);
 });
 
 var ip = config["XComfort:Host"];

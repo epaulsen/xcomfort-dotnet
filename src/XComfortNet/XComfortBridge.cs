@@ -45,7 +45,7 @@ public sealed class XComfortBridge : IAsyncDisposable
         _inventory = new LightInventory(preferredLightDeviceId);
     }
 
-    public async Task ConnectAsync(CancellationToken? cancellationToken = default)
+    public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
         if (_messagePump is not null)
         {
@@ -53,7 +53,7 @@ public sealed class XComfortBridge : IAsyncDisposable
         }
 
         _messagePump = await XComfortBridgeFactory.ConnectAsync(
-            _ipAddress, _authKey, _loggerFactory, cancellationToken ?? CancellationToken.None);
+            _ipAddress, _authKey, _loggerFactory, cancellationToken);
         _telemetry.SetBridgeInfo(_messagePump.BridgeId, _messagePump.FirmwareVersion, _ipAddress);
         _messageSubscription = _messagePump.MessageReceived.Subscribe(message =>
         {

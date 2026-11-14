@@ -37,6 +37,7 @@ internal sealed class LightBridgeService(
     ILogger<LightBridgeService> logger) : BackgroundService
 {
     private readonly IMqttClient _mqtt = new MqttClientFactory().CreateMqttClient();
+    private readonly ILogger _mqttMessageLogger = loggerFactory.CreateLogger("XComfortNet.Web.Mqtt");
     private readonly LightMqttProtocol _protocol = new(mqttOptions.Value.TopicPrefix);
     private readonly EnergyTracker _energy = new(Path.Combine(environment.ContentRootPath, "data", "energy.json"), TimeProvider.System);
     private readonly string _manifestPath = Path.Combine(environment.ContentRootPath, "data", "mqtt-publications.json");
@@ -86,13 +87,18 @@ internal sealed class LightBridgeService(
         }
         finally
         {
+            using var energySaveTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             try
             {
-                await _energy.SaveAsync();
+                await _energy.SaveAsync(energySaveTimeout.Token);
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
                 logger.LogWarning("Energy totals could not be saved: {ErrorType}", error.GetType().Name);
+            }
+            catch (OperationCanceledException) when (energySaveTimeout.IsCancellationRequested)
+            {
+                logger.LogWarning("Energy totals save timed out during shutdown.");
             }
             if (_mqtt.IsConnected)
             {
@@ -115,6 +121,8 @@ internal sealed class LightBridgeService(
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            using var refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            Task? refreshTask = null;
             await using (var bridge = new XComfortBridge(bridgeOptions.Value.Host, bridgeOptions.Value.AuthKey,
                 loggerFactory))
             {
@@ -140,6 +148,12 @@ internal sealed class LightBridgeService(
                     await bridge.WaitForInitializationAsync(initialization.Token);
                     logger.LogInformation("Inventory completed with {LightCount} lights, {ClimateCount} climates and {SensorCount} sensors.",
                         bridge.Lights.Count, bridge.Telemetry.Climates.Count, bridge.Telemetry.Sensors.Count);
+                    refreshTask = RefreshBridgeStateAsync(bridge, refreshCancellation.Token);
+                    var completedTask = await Task.WhenAny(bridge.Completion, refreshTask).WaitAsync(stoppingToken);
+                    if (completedTask == refreshTask)
+                    {
+                        await refreshTask;
+                    }
                     await bridge.Completion.WaitAsync(stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -153,6 +167,17 @@ internal sealed class LightBridgeService(
                 }
                 finally
                 {
+                    await refreshCancellation.CancelAsync();
+                    if (refreshTask is { IsCompleted: false })
+                    {
+                        try
+                        {
+                            await refreshTask;
+                        }
+                        catch (OperationCanceledException) when (refreshCancellation.IsCancellationRequested)
+                        {
+                        }
+                    }
                     _bridge = null;
                     _state = _state with { Ready = false };
                     ObserveEnergy();
@@ -160,6 +185,16 @@ internal sealed class LightBridgeService(
                 }
             }
             await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+        }
+    }
+
+    private async Task RefreshBridgeStateAsync(XComfortBridge bridge, CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5));
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            await bridge.ReadAllDataAsync(cancellationToken);
+            logger.LogDebug("Requested Bridge state refresh.");
         }
     }
 
@@ -306,6 +341,8 @@ internal sealed class LightBridgeService(
     {
         var message = args.ApplicationMessage;
         var payload = message.ConvertPayloadToString();
+        _mqttMessageLogger.LogDebug("Received MQTT message on {Topic} (retained: {Retain}): {Payload}",
+            message.Topic, message.Retain, payload);
         if (message.Topic == "homeassistant/status")
         {
             if (payload == "online")
@@ -405,10 +442,13 @@ internal sealed class LightBridgeService(
         }
     }
 
-    private Task PublishAsync(string topic, string payload, CancellationToken cancellationToken) =>
-        _mqtt.PublishAsync(new MqttApplicationMessageBuilder().WithTopic(topic).WithPayload(payload)
-            .WithRetainFlag().WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build(),
-            cancellationToken);
+    private async Task PublishAsync(string topic, string payload, CancellationToken cancellationToken)
+    {
+        var message = new MqttApplicationMessageBuilder().WithTopic(topic).WithPayload(payload)
+            .WithRetainFlag().WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce).Build();
+        await _mqtt.PublishAsync(message, cancellationToken);
+        _mqttMessageLogger.LogDebug("Sent retained MQTT message on {Topic}: {Payload}", topic, payload);
+    }
 
     private void SignalChange() => _changes.Writer.TryWrite(true);
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);

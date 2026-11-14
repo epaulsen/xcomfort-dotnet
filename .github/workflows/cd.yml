@@ -4,6 +4,8 @@ on:
   pull_request_target:
     types: [closed]
     branches: [main]
+  push:
+    tags: ["**"]
   workflow_dispatch:
 
 permissions:
@@ -14,16 +16,32 @@ env:
 
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+      - name: Validate Git tag
+        if: github.ref_type == 'tag'
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
+            echo "::error::Git tag is not a valid Docker tag: $GITHUB_REF_NAME"
+            exit 1
+          fi
       - name: Build Docker image
-        run: docker build --tag "$IMAGE:${{ github.run_id }}" --tag "$IMAGE:latest" .
+        run: |
+          docker build --tag "$IMAGE:$GITHUB_RUN_ID" --tag "$IMAGE:latest" .
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            docker tag "$IMAGE:$GITHUB_RUN_ID" "$IMAGE:$GITHUB_REF_NAME"
+          fi
       - name: Save Docker image
-        run: docker save --output "$RUNNER_TEMP/image.tar" "$IMAGE:${{ github.run_id }}" "$IMAGE:latest"
+        run: |
+          tags=("$IMAGE:$GITHUB_RUN_ID" "$IMAGE:latest")
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            tags+=("$IMAGE:$GITHUB_REF_NAME")
+          fi
+          docker save --output "$RUNNER_TEMP/image.tar" "${tags[@]}"
       - uses: actions/upload-artifact@v4
         with:
           name: docker-image
@@ -48,5 +66,8 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Push Docker image
         run: |
-          docker push "$IMAGE:${{ github.run_id }}"
+          docker push "$IMAGE:$GITHUB_RUN_ID"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            docker push "$IMAGE:$GITHUB_REF_NAME"
+          fi
           docker push "$IMAGE:latest"

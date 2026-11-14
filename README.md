@@ -116,9 +116,12 @@ MQTT publication manifest. The container runs as the .NET image's non-root
 
 CI builds and tests the solution and builds the image for every pull request;
 it can also be started manually. CD builds an image after a pull request is
-merged into `main`, or when started manually. After the `dockerhub` GitHub
-environment approves the deployment, CD publishes that same image to
-`epaulsen/xcomfort2mqtt` with the `latest` and GitHub workflow run ID tags.
+merged into `main`, when a Git tag is pushed, or when started manually. After
+the `dockerhub` GitHub environment approves the deployment, CD publishes that
+same image to `epaulsen/xcomfort2mqtt` with the `latest` and GitHub workflow
+run ID tags.
+When building a Git tag, the image also receives the same tag; Git tags must
+meet Docker's tag naming rules.
 The GitHub-hosted runner builds a `linux/amd64` image.
 
 To configure publishing, create a Docker Hub personal access token with

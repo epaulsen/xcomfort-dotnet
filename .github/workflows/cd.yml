@@ -1,0 +1,52 @@
+name: CD
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: epaulsen/xcomfort2mqtt
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+      - name: Build Docker image
+        run: docker build --tag "$IMAGE:${{ github.run_id }}" --tag "$IMAGE:latest" .
+      - name: Save Docker image
+        run: docker save --output "$RUNNER_TEMP/image.tar" "$IMAGE:${{ github.run_id }}" "$IMAGE:latest"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: ${{ runner.temp }}/image.tar
+          retention-days: 30
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: dockerhub
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: ${{ runner.temp }}
+      - name: Load Docker image
+        run: docker load --input "$RUNNER_TEMP/image.tar"
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: epaulsen
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Push Docker image
+        run: |
+          docker push "$IMAGE:${{ github.run_id }}"
+          docker push "$IMAGE:latest"

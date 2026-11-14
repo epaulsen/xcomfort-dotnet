@@ -182,6 +182,16 @@ internal sealed class LightBridgeService(
         }
     }
 
+    private async Task RefreshBridgeStateAsync(XComfortBridge bridge, CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(5));
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            await bridge.ReadAllDataAsync(cancellationToken);
+            logger.LogDebug("Requested Bridge state refresh.");
+        }
+    }
+
     private async Task RunMqttAsync(CancellationToken stoppingToken)
     {
         var options = new MqttClientOptionsBuilder()

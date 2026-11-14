@@ -105,6 +105,30 @@ restart.
 Live heating validation in this lab is read-only unless separately authorized.
 Protocol command payloads and sequencing are tested without controlling heaters.
 
+### Docker and releases
+
+Build the web image from the repository root with `docker build -t xcomfort2mqtt .`.
+The container listens on port 8080. Configure `XComfort__Host`,
+`XComfort__AuthKey`, `Mqtt__Host`, and `Mqtt__Port` through environment
+variables. Mount persistent storage at `/app/data` for energy totals and the
+MQTT publication manifest. The container runs as the .NET image's non-root
+`app` user; a bind-mounted directory must be writable by that user.
+
+CI builds and tests the solution and builds the image for every pull request;
+it can also be started manually. CD builds an image after a pull request is
+merged into `main`, or when started manually. After the `dockerhub` GitHub
+environment approves the deployment, CD publishes that same image to
+`epaulsen/xcomfort2mqtt` with the `latest` and GitHub workflow run ID tags.
+The GitHub-hosted runner builds a `linux/amd64` image.
+
+To configure publishing, create a Docker Hub personal access token with
+read/write access to the repository. In GitHub, add it as the repository
+secret `DOCKERHUB_TOKEN` under **Settings > Secrets and variables > Actions**.
+Alternatively, add it as an environment secret under **Settings >
+Environments > dockerhub**. Configure required reviewers on that environment:
+without that protection, publishing starts without approval. Do not put the
+token in source control.
+
 ## Local integration environment
 
 Requires the .NET 10 SDK and a running Docker-compatible container runtime:

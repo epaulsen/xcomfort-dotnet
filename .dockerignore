@@ -1,0 +1,11 @@
+**
+!src/
+!src/XComfortNet/
+!src/XComfortNet/**
+!src/XComfortNet.Web/
+!src/XComfortNet.Web/**
+**/bin/
+**/obj/
+**/data/
+**/appsettings.*.json
+**/*.user

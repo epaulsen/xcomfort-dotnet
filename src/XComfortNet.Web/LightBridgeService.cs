@@ -86,13 +86,18 @@ internal sealed class LightBridgeService(
         }
         finally
         {
+            using var energySaveTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             try
             {
-                await _energy.SaveAsync();
+                await _energy.SaveAsync(energySaveTimeout.Token);
             }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException)
             {
                 logger.LogWarning("Energy totals could not be saved: {ErrorType}", error.GetType().Name);
+            }
+            catch (OperationCanceledException) when (energySaveTimeout.IsCancellationRequested)
+            {
+                logger.LogWarning("Energy totals save timed out during shutdown.");
             }
             if (_mqtt.IsConnected)
             {

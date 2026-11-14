@@ -39,6 +39,8 @@ internal sealed class LightBridgeService(
     private readonly IMqttClient _mqtt = new MqttClientFactory().CreateMqttClient();
     private readonly LightMqttProtocol _protocol = new(mqttOptions.Value.TopicPrefix);
     private readonly EnergyTracker _energy = new(Path.Combine(environment.ContentRootPath, "data", "energy.json"), TimeProvider.System);
+    private readonly string _manifestPath = Path.Combine(environment.ContentRootPath, "data", "mqtt-publications.json");
+    private readonly object _energyObservationGate = new();
     private readonly Channel<bool> _changes = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
     {
         SingleReader = true,
@@ -211,8 +213,9 @@ internal sealed class LightBridgeService(
 
     private async Task PublishChangesAsync(CancellationToken stoppingToken)
     {
-        var discoveryCache = new Dictionary<string, string>();
-        var stateCache = new Dictionary<string, string>();
+        var manifest = MqttPublicationManifest.Load(_manifestPath);
+        var discoveryCache = manifest.Discoveries;
+        var stateCache = manifest.States;
         var publishedRevision = -1;
         var telemetryProtocol = new TelemetryMqttProtocol(_protocol);
         await foreach (var _ in _changes.Reader.ReadAllAsync(stoppingToken))
@@ -239,11 +242,10 @@ internal sealed class LightBridgeService(
                     }
                     var telemetry = _energy.AppendSensors(bridgeId, state.Telemetry);
                     var discoveries = telemetryProtocol.Discoveries(bridgeId, state.Lights, telemetry);
-                    if (force)
-                        foreach (var (topic, payload) in telemetryProtocol.LightPowerRemovalDiscoveries(
-                            bridgeId, state.Lights, discoveries))
-                            await PublishAsync(topic, payload, stoppingToken);
-                    await PublishRetainedSetAsync(discoveryCache, discoveries, force, stoppingToken);
+                    var obsoleteLightPower = force
+                        ? telemetryProtocol.LightPowerRemovalDiscoveries(bridgeId, state.Lights, discoveries)
+                        : new Dictionary<string, string>();
+                    await PublishDiscoveriesAsync(discoveryCache, discoveries, obsoleteLightPower, force, stoppingToken);
                     var states = state.Lights
                         .Select(light => (Topic: _protocol.StateTopic(bridgeId, light.DeviceId),
                             Payload: LightMqttProtocol.State(light)))
@@ -252,6 +254,8 @@ internal sealed class LightBridgeService(
                     foreach (var (topic, payload) in telemetryProtocol.States(bridgeId, telemetry))
                         states[topic] = payload;
                     await PublishRetainedSetAsync(stateCache, states, force, stoppingToken);
+                    manifest = new MqttPublicationManifest { Discoveries = discoveryCache, States = stateCache };
+                    await manifest.SaveAsync(_manifestPath, stoppingToken);
                     publishedRevision = revision;
                 }
                 await PublishAsync(_protocol.BridgeAvailabilityTopic(bridgeId),
@@ -273,8 +277,11 @@ internal sealed class LightBridgeService(
 
     private void ObserveEnergy()
     {
-        var state = _state;
-        if (state.BridgeId is string bridgeId) _energy.Observe(bridgeId, state.Telemetry, state.Ready);
+        lock (_energyObservationGate)
+        {
+            var state = _state;
+            if (state.BridgeId is string bridgeId) _energy.Observe(bridgeId, state.Telemetry, state.Ready);
+        }
     }
 
     private async Task TrackEnergyAsync(CancellationToken stoppingToken)
@@ -371,6 +378,30 @@ internal sealed class LightBridgeService(
                 await PublishAsync(topic, payload, cancellationToken);
                 cache[topic] = payload;
             }
+        }
+    }
+
+    private async Task PublishDiscoveriesAsync(Dictionary<string, string> cache,
+        Dictionary<string, string> current, IReadOnlyDictionary<string, string> obsoleteComponents,
+        bool force, CancellationToken cancellationToken)
+    {
+        foreach (var removed in cache.Keys.Except(current.Keys).ToArray())
+        {
+            await PublishAsync(removed, "", cancellationToken);
+            cache.Remove(removed);
+        }
+        foreach (var (topic, payload) in current)
+        {
+            if (!force && cache.TryGetValue(topic, out var previous) && previous == payload) continue;
+
+            if (obsoleteComponents.TryGetValue(topic, out var legacyRemoval))
+                await PublishAsync(topic, legacyRemoval, cancellationToken);
+            if (cache.TryGetValue(topic, out previous) &&
+                TelemetryMqttProtocol.RemovedComponentsUpdate(previous, payload) is { } removal)
+                await PublishAsync(topic, removal, cancellationToken);
+
+            await PublishAsync(topic, payload, cancellationToken);
+            cache[topic] = payload;
         }
     }
 

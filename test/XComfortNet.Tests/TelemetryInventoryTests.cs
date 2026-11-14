@@ -58,6 +58,21 @@ public class TelemetryInventoryTests
     }
 
     [Fact]
+    public void LinkedRoomTemperatureSensorRemainsPublishedWhenReadingBecomesUnknown()
+    {
+        var inventory = new TelemetryInventory();
+        inventory.Apply(Message(300, """
+            {"devices":[{"deviceId":10,"devType":450,"info":[{"text":"1222","value":"20.5"}]}],
+             "rooms":[{"roomId":1,"temperatureOnly":false,"roomSensorId":10,"state":2,"mode":3}],"lastItem":true}
+            """));
+        Assert.Equal(20.5d, inventory.Snapshot.Sensors.Single(sensor => sensor.Key == "room_1_temperature").Value);
+
+        inventory.Apply(Message(291, """{"deviceId":10,"info":[{"text":"1222","value":"-100"}]}"""));
+
+        Assert.Null(Assert.Single(inventory.Snapshot.Sensors, sensor => sensor.Key == "room_1_temperature").Value);
+    }
+
+    [Fact]
     public void HandlesHeatingDemandPowerDeviceTemperatureAndValveReadings()
     {
         var inventory = new TelemetryInventory();
@@ -74,6 +89,20 @@ public class TelemetryInventoryTests
         Assert.True(sensors.Single(s => s.Key == "device_1_device_temperature").Diagnostic);
         Assert.Equal(33d, sensors.Single(s => s.Key == "device_2_valve_position").Value);
         Assert.DoesNotContain(sensors, s => s.Key == "device_3_power");
+    }
+
+    [Fact]
+    public void HeatingDemandInfoUpdatesReplaceOlderDimmvalueUnlessExplicitlyOverridden()
+    {
+        var inventory = new TelemetryInventory();
+        inventory.Apply(Message(300, """
+            {"devices":[{"deviceId":1,"devType":440,"dimmvalue":0}],"lastItem":true}
+            """));
+        inventory.Apply(Message(292, """{"deviceId":1,"info":[{"text":"1225","value":"33"}]}"""));
+        Assert.Equal(33d, inventory.Snapshot.Sensors.Single(sensor => sensor.Key == "device_1_heating_demand").Value);
+
+        inventory.Apply(Message(292, """{"deviceId":1,"dimmvalue":12,"info":[{"text":"1225","value":"50"}]}"""));
+        Assert.Equal(12d, inventory.Snapshot.Sensors.Single(sensor => sensor.Key == "device_1_heating_demand").Value);
     }
 
     [Fact]

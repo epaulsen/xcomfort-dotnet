@@ -90,6 +90,67 @@ public class ClimateMqttTests
         Assert.True(removals.TryGetProperty("device_1_device_temperature", out _));
     }
 
+    [Fact]
+    public void DiscoveryReconciliationExplicitlyRemovesEntitiesMissingFromReplacementDocument()
+    {
+        var protocol = new TelemetryMqttProtocol(_topics);
+        var light = new XComfortLight(1, 4, "Light", true, false, 0, 0);
+        var oldTelemetry = new XComfortTelemetry([], [
+            new XComfortSensor("comp_4_battery", "comp_4", "Actuator", "xComfort", "Battery",
+                "battery", "%", "measurement", true, 75d)
+        ]);
+        var previous = Assert.Single(protocol.Discoveries("bridge-1", [light], oldTelemetry)).Value;
+        var current = Assert.Single(protocol.Discoveries("bridge-1", [light], XComfortTelemetry.Empty)).Value;
+
+        var removal = TelemetryMqttProtocol.RemovedComponentsUpdate(previous, current);
+        Assert.NotNull(removal);
+        using var document = JsonDocument.Parse(removal);
+        var components = document.RootElement.GetProperty("components");
+        Assert.True(components.TryGetProperty("light_1", out _));
+        Assert.Equal("sensor", components.GetProperty("comp_4_battery").GetProperty("platform").GetString());
+        Assert.Single(components.GetProperty("comp_4_battery").EnumerateObject());
+    }
+
+    [Fact]
+    public async Task PublicationManifestSurvivesRestartWithDiscoveryAndStateTopics()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, $"mqtt-manifest-{Guid.NewGuid():N}.json");
+        try
+        {
+            var manifest = new MqttPublicationManifest
+            {
+                Discoveries = new Dictionary<string, string> { ["homeassistant/device/test/config"] = "{}" },
+                States = new Dictionary<string, string> { ["xcomfort2mqtt/test/state"] = "{}" }
+            };
+            await manifest.SaveAsync(path);
+
+            var restored = MqttPublicationManifest.Load(path);
+
+            Assert.Equal(manifest.Discoveries, restored.Discoveries);
+            Assert.Equal(manifest.States, restored.States);
+        }
+        finally
+        {
+            File.Delete(path);
+            File.Delete(path + ".tmp");
+        }
+    }
+
+    [Fact]
+    public void InvalidPublicationManifestFailsInsteadOfSilentlyForgettingRetainedTopics()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, $"invalid-mqtt-manifest-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, """{"Discoveries":null,"States":{}}""");
+            Assert.Throws<InvalidDataException>(() => MqttPublicationManifest.Load(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Theory]
     [InlineData("mode", "off")]
     [InlineData("mode", "heat")]

@@ -110,6 +110,26 @@ public class LightInventoryTests
     }
 
     [Fact]
+    public void ComponentDeletionRemovesAllItsLightsButKeepsOtherComponents()
+    {
+        var inventory = new LightInventory();
+        inventory.Apply(Message(300, """
+            {"devices":[
+                {"deviceId":1,"compId":4,"devType":100,"usage":0},
+                {"deviceId":2,"compId":4,"devType":101,"usage":0},
+                {"deviceId":3,"compId":5,"devType":100,"usage":0}
+            ],"lastItem":true}
+            """));
+
+        inventory.Apply(Message(309, """{"compId":4}"""));
+
+        Assert.Null(inventory.GetLight(1));
+        Assert.Null(inventory.GetLight(2));
+        Assert.Equal(3, Assert.Single(inventory.Lights).DeviceId);
+        Assert.Null(inventory.FirstLight);
+    }
+
+    [Fact]
     public void ReconnectKeepsPreferredLightDespiteReorderedSnapshot()
     {
         var inventory = new LightInventory(preferredDeviceId: 5);

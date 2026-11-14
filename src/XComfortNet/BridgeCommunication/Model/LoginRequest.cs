@@ -6,10 +6,10 @@ public class LoginRequest
 {
     [JsonPropertyName("username")]
     public required string Username { get; set; }
-    
-    [JsonPropertyName("password")]   
+
+    [JsonPropertyName("password")]
     public required string Password { get; set; }
-    
+
     [JsonPropertyName("salt")]
     public required string Salt { get; set; }
 }
@@ -17,5 +17,5 @@ public class LoginRequest
 public class TokenMessage
 {
     [JsonPropertyName("token")]
-    public string Token { get; set; }
+    public required string Token { get; set; }
 }

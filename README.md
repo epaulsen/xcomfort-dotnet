@@ -164,3 +164,26 @@ not deleted or automatically migrated to the folder.
 Do not expose these services to untrusted networks or use this configuration
 in production. Home Assistant uses a bridge network rather than host
 networking, so LAN multicast discovery is not available in this setup.
+
+## Docker Compose integration environment
+
+With the same local `src/XComfortNet.Web/appsettings.Development.json` Bridge
+credentials, start all three services and inspect their memory usage:
+
+```sh
+docker compose up -d --build
+docker compose stats
+```
+
+Home Assistant is at `http://localhost:8123`; the web API is at
+`http://localhost:8080`. The broker is available to containers at `mqtt:1883`;
+use `docker compose port mqtt 1883` to find its dynamically assigned localhost
+port. Home Assistant uses the same configuration folder as Aspire, so stop
+Aspire before starting Compose. The web application reads the local settings
+file through a read-only mount; credentials are not included in its image.
+
+Compose uses separate persistent volumes for Mosquitto and the web application's
+energy totals and publication manifest. Stop the services with
+`docker compose down`; their volumes and Home Assistant configuration remain.
+The anonymous, unencrypted broker and bridge networking have the same local-only
+limitations described above.

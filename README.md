@@ -22,7 +22,13 @@ dotnet run --project src/XComfortNet.Web
 ```
 
 The broker defaults to `localhost:1883`; override `Mqtt:Host` and `Mqtt:Port`
-in local configuration. `GET /` identifies the application; `GET /health`
+in local configuration. For brokers requiring authentication, configure
+`Mqtt:Username` and `Mqtt:Password`, or the environment variables
+`Mqtt__Username` and `Mqtt__Password`. Leave both unset for anonymous access.
+If a password is set, a username is required. Store credentials outside source
+control. The MQTT connection is unencrypted;
+username/password authentication does not provide transport encryption.
+`GET /` identifies the application; `GET /health`
 reports application health. `GET /api/lights` shows Bridge/MQTT connection status
 and all verified lights without exposing credentials. `GET /api/light` remains
 available for compatibility.
@@ -110,7 +116,8 @@ Protocol command payloads and sequencing are tested without controlling heaters.
 Build the web image from the repository root with `docker build -t xcomfort2mqtt .`.
 The container listens on port 8080. Configure `XComfort__Host`,
 `XComfort__AuthKey`, `Mqtt__Host`, and `Mqtt__Port` through environment
-variables. Mount persistent storage at `/app/data` for energy totals and the
+variables, plus `Mqtt__Username` and `Mqtt__Password` when required by the
+broker. Mount persistent storage at `/app/data` for energy totals and the
 MQTT publication manifest. The container runs as the .NET image's non-root
 `app` user; a bind-mounted directory must be writable by that user.
 

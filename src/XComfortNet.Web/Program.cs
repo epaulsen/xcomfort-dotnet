@@ -7,7 +7,8 @@ builder.Services.AddOptions<XComfortOptions>().BindConfiguration("XComfort")
         "Configure XComfort:Host and XComfort:AuthKey in local appsettings.Development.json.")
     .ValidateOnStart();
 builder.Services.AddOptions<MqttOptions>().BindConfiguration("Mqtt")
-    .Validate(options => options.IsValid(), "Configure a valid MQTT host, port and topic prefix.")
+    .Validate(options => options.IsValid(),
+        "Configure a valid MQTT host, port and topic prefix, and a username when a password is set.")
     .ValidateOnStart();
 builder.Services.AddSingleton<LightBridgeService>();
 builder.Services.AddHostedService(services => services.GetRequiredService<LightBridgeService>());

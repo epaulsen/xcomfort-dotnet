@@ -19,9 +19,29 @@ internal sealed class MqttOptions
     public string Host { get; set; } = "localhost";
     public int Port { get; set; } = 1883;
     public string TopicPrefix { get; set; } = "xcomfort2mqtt";
+    public string? Username { get; set; }
+    public string? Password { get; set; }
 
     public bool IsValid() => !string.IsNullOrWhiteSpace(Host) && Port is > 0 and <= 65535 &&
-        Regex.IsMatch(TopicPrefix, "^[a-zA-Z0-9_-]+$");
+        Regex.IsMatch(TopicPrefix, "^[a-zA-Z0-9_-]+$") &&
+        (string.IsNullOrEmpty(Password) || !string.IsNullOrEmpty(Username));
+
+    public MqttClientOptions BuildClientOptions(string availabilityTopic)
+    {
+        var builder = new MqttClientOptionsBuilder()
+            .WithClientId($"{TopicPrefix}-web")
+            .WithTcpServer(Host, Port)
+            .WithProtocolVersion(MqttProtocolVersion.V500)
+            .WithCleanSession()
+            .WithWillTopic(availabilityTopic)
+            .WithWillPayload("offline")
+            .WithWillRetain();
+
+        if (!string.IsNullOrEmpty(Username))
+            builder.WithCredentials(Username, Password);
+
+        return builder.Build();
+    }
 }
 
 internal sealed record LightBridgeStatus(
@@ -200,15 +220,7 @@ internal sealed class LightBridgeService(
 
     private async Task RunMqttAsync(CancellationToken stoppingToken)
     {
-        var options = new MqttClientOptionsBuilder()
-            .WithClientId($"{mqttOptions.Value.TopicPrefix}-web")
-            .WithTcpServer(mqttOptions.Value.Host, mqttOptions.Value.Port)
-            .WithProtocolVersion(MqttProtocolVersion.V500)
-            .WithCleanSession()
-            .WithWillTopic(_protocol.ServiceAvailabilityTopic)
-            .WithWillPayload("offline")
-            .WithWillRetain()
-            .Build();
+        var options = mqttOptions.Value.BuildClientOptions(_protocol.ServiceAvailabilityTopic);
 
         while (!stoppingToken.IsCancellationRequested)
         {
